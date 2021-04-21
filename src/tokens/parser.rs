@@ -24,10 +24,14 @@ pub struct Tokenizer<'a> {
     state: TokenizerState,
     /// Used when reading keywords and identifiers.
     buffer: String,
+    /// Stores tokens to return, because sometimes iterating over one character can produce
+    /// multiple tokens. For example: identifier* produces 'identifier' and '*' when '*' is
+    /// iterated over.
+    tokens: Vec<Token>,
 }
 
 impl<'a> Tokenizer<'a> {
-    fn finish_integer_literal(&mut self) -> Result<Token, String> {
+    fn finish_integer_literal(&mut self) -> Result<(), String> {
         let literal_text = std::mem::take(&mut self.buffer);
         // Try to parse the value and format a pretty error if it cannot be parsed.
         // (Can only have an error if the value is bigger than an i32 which is rather
@@ -38,10 +42,11 @@ impl<'a> Tokenizer<'a> {
                 literal_text, err
             )
         })?;
-        Ok(Token::IntegerConstant(value))
+        self.tokens.push(Token::IntegerConstant(value));
+        Ok(())
     }
 
-    fn finish_keyword_or_identifier(&mut self) -> Token {
+    fn finish_keyword_or_identifier(&mut self) {
         let token = if let Ok(keyword) = Keyword::from_text(&self.buffer[..]) {
             // Clear the buffer and use the detected keyword.
             self.buffer.clear();
@@ -52,10 +57,10 @@ impl<'a> Tokenizer<'a> {
         };
         // Go back to looking for tokens.
         self.state = TokenizerState::LookingForToken;
-        token
+        self.tokens.push(token);
     }
 
-    fn process_char(&mut self, c: char) -> Result<Option<Token>, String> {
+    fn process_char(&mut self, c: char) -> Result<(), String> {
         use TokenizerState::*;
         match self.state {
             LookingForToken => match c {
@@ -82,13 +87,13 @@ impl<'a> Tokenizer<'a> {
                         Some('/') => self.state = LineComment,
                         _ => {
                             // It is just a symbol and not a comment, so push the appropriate token.
-                            return Ok(Some(Token::Symbol(Symbol::ForwardSlash)));
+                            self.tokens.push(Token::Symbol(Symbol::ForwardSlash));
                         }
                     }
                 }
                 _ => {
                     if let Ok(symbol) = Symbol::from_text(&c.to_string()) {
-                        return Ok(Some(Token::Symbol(symbol)));
+                        self.tokens.push(Token::Symbol(symbol))
                     } else {
                         return Err(format!("unexpected character '{}'", c));
                     }
@@ -100,7 +105,7 @@ impl<'a> Tokenizer<'a> {
                     // Take the string content out of the buffer, leaving behind an empty string.
                     let buffer_contents = std::mem::take(&mut self.buffer);
                     self.state = LookingForToken;
-                    return Ok(Some(Token::StringConstant(buffer_contents)));
+                    self.tokens.push(Token::StringConstant(buffer_contents));
                 }
                 _ => {
                     self.buffer.push(c);
@@ -159,28 +164,42 @@ impl<'a> Tokenizer<'a> {
                 _ => self.state = BlockComment,
             },
         }
-        Ok(None)
+        Ok(())
     }
 
     /// Called when the end of the file is reached so that the last token we were parsing can finish
     /// up. For example if we were parsing an identifier, we need this step to convert it to a token
     /// otherwise it would stay in the buffer and die with the tokenizer.
-    fn process_eof(&mut self) -> Result<Option<Token>, String> {
+    fn process_eof(&mut self) -> Result<(), String> {
         use TokenizerState::*;
-        let res = match self.state {
-            LookingForToken | LineComment => Ok(None),
-            StringLiteral => Err(format!("Unterminated string literal")),
-            IntegerLiteral => Ok(Some(self.finish_integer_literal()?)),
-            KeywordOrIdentifier => Ok(Some(self.finish_keyword_or_identifier())),
-            BlockComment | BlockComment2 => Err(format!("Unterminated block comment")),
+        match self.state {
+            LookingForToken | LineComment => (),
+            StringLiteral => return Err(format!("Unterminated string literal")),
+            IntegerLiteral => self.finish_integer_literal()?,
+            KeywordOrIdentifier => self.finish_keyword_or_identifier(),
+            BlockComment | BlockComment2 => return Err(format!("Unterminated block comment")),
         };
         // So that if process_eof gets called multiple times we don't cause any undeserved errors.
         self.state = LookingForToken;
-        res
+        Ok(())
+    }
+
+    fn add_context_to_error(&self, err: String) -> String {
+        format!("At {}:{}:{}:\n{}", self.filename, self.line, self.col, err)
+    }
+
+    /// Panics if there are no more tokens.
+    fn pop_token(&mut self) -> Option<(Token, usize, usize)> {
+        Some((self.tokens.remove(0), self.line, self.col))
     }
 
     fn next_token(&mut self) -> Option<Result<(Token, usize, usize), String>> {
-        for c in self.input.chars() {
+        if self.tokens.len() > 0 {
+            return self.pop_token().map(|t| Ok(t));
+        }
+        let mut iter = self.input.chars().peekable();
+        while let (peek, Some(c)) = (iter.peek().cloned(), iter.next()) {
+            self.peek_next = peek;
             if c == '\n' {
                 self.line += 1;
                 self.col = 1;
@@ -190,21 +209,23 @@ impl<'a> Tokenizer<'a> {
             // Strings in Rust are utf-8 so some characters can be more than 1 byte long.
             self.input = &self.input[c.len_utf8()..];
             match self.process_char(c) {
-                Ok(Some(token)) => return Some(Ok((token, self.line, self.col))),
-                Ok(None) => (),
-                Err(err) => return Some(Err(err)),
+                Ok(..) => {
+                    if self.tokens.len() > 0 {
+                        // Remove from bottom to maintain order.
+                        return self.pop_token().map(|t| Ok(t));
+                    }
+                }
+                Err(err) => return Some(Err(self.add_context_to_error(err))),
             }
         }
-        match self.process_eof() {
-            Ok(Some(token)) => Some(Ok((token, self.line, self.col))),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
+        if let Err(err) = self.process_eof() {
+            return Some(Err(self.add_context_to_error(err)));
         }
-    }
-
-    /// Returns true if the tokenizer has gotten to the end of the input file.
-    pub fn reached_eof(&self) -> bool {
-        self.input.len() == 0
+        if self.tokens.len() > 0 {
+            self.pop_token().map(|t| Ok(t))
+        } else {
+            None
+        }
     }
 }
 
@@ -225,5 +246,6 @@ pub fn tokenize<'a>(program: &'a str, filename: &'a str) -> Tokenizer<'a> {
         peek_next: None,
         state: TokenizerState::LookingForToken,
         buffer: String::new(),
+        tokens: Vec::new(),
     }
 }
