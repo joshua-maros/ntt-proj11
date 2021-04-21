@@ -24,14 +24,8 @@ fn main() {
         }
     };
 
-    let tokenized = match tokens::tokenize(&file_contents[..], &filename[..]) {
-        Ok(v) => v,
-        Err(err) => {
-            // We don't need to put the filename here because the error message already has it.
-            eprintln!("Failed to tokenize an input file:\n{}", err);
-            std::process::exit(-1);
-        }
-    };
-
-    println!("{:#?}", tokenized);
+    let tokenizer = tokens::tokenize(&file_contents[..], &filename[..]);
+    for res in tokenizer {
+        println!("{:#?}", res);
+    }
 }
