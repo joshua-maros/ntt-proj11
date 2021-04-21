@@ -201,6 +201,11 @@ impl<'a> Tokenizer<'a> {
             Err(err) => Some(Err(err)),
         }
     }
+
+    /// Returns true if the tokenizer has gotten to the end of the input file.
+    pub fn reached_eof(&self) -> bool {
+        self.input.len() == 0
+    }
 }
 
 impl<'a> Iterator for Tokenizer<'a> {

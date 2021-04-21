@@ -24,8 +24,11 @@ fn main() {
         }
     };
 
-    let tokenizer = tokens::tokenize(&file_contents[..], &filename[..]);
-    for res in tokenizer {
-        println!("{:#?}", res);
+    match syntax_tree::parse(&file_contents[..], &filename[..]) {
+        Ok(program) => println!("{:#?}", program),
+        Err(err) => {
+            eprintln!("\n\n{}", err);
+            std::process::exit(-1);
+        }
     }
 }

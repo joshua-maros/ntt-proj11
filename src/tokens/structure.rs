@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TokenizedProgram {
     pub tokens: Vec<Token>,
@@ -10,6 +12,30 @@ pub enum Token {
     IntegerConstant(i32),
     StringConstant(String),
     Identifier(String),
+}
+
+impl From<Keyword> for Token {
+    fn from(other: Keyword) -> Self {
+        Self::Keyword(other)
+    }
+}
+
+impl From<Symbol> for Token {
+    fn from(other: Symbol) -> Self {
+        Self::Symbol(other)
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Keyword(k) => write!(f, "keyword {}", k),
+            Self::Symbol(s) => write!(f, "symbol '{}'", s),
+            Self::IntegerConstant(v) => write!(f, "integer literal '{}'", v),
+            Self::StringConstant(v) => write!(f, "string literal \"{}\"", v),
+            Self::Identifier(v) => write!(f, "identifier '{}'", v),
+        }
+    }
 }
 
 /// This is a macro for creating an enum with functions to convert back and forth from a string
@@ -34,6 +60,13 @@ macro_rules! keyword_enum {
             pub fn as_text(self) -> &'static str {
                 match self {
                     $(Self::$VariantName => $value,)*
+                }
+            }
+        }
+        impl Display for $EnumName{
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(Self::$VariantName => write!(f, "{}", $value),)*
                 }
             }
         }

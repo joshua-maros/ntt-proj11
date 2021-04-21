@@ -5,7 +5,9 @@ pub struct Program {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Class {
-    pub variables: Vec<ClassVariable>,
+    pub name: String,
+    pub static_variables: Vec<VariableDeclaration>,
+    pub field_variables: Vec<VariableDeclaration>,
     pub subroutines: Vec<ClassSubroutine>,
 }
 
@@ -66,7 +68,7 @@ pub enum Expression {
     SubroutineCall {
         subroutine: Box<Expression>,
         args: Vec<Expression>,
-    }
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -86,22 +88,6 @@ pub enum BinaryOperator {
     Equal,
     BitwiseAnd,
     BitwiseOr,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ClassVariableType {
-    Static,
-    Field,
-}
-// The variant names are specific enough and the enum name is long enough that this works well to
-// do it by default.
-pub use ClassVariableType::*;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ClassVariable {
-    pub name: String,
-    // 'type' is a rust keyword.
-    pub typ: ClassVariableType,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
