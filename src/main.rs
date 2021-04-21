@@ -1,4 +1,4 @@
-mod ast_parsing;
+mod syntax_tree;
 mod tokens;
 
 fn main() {
