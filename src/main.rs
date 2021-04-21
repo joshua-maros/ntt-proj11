@@ -1,3 +1,4 @@
+mod ast_parsing;
 mod tokens;
 
 fn main() {
