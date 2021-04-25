@@ -31,7 +31,7 @@ pub enum DataType {
 pub enum Statement {
     Do(Expression),
     Let {
-        variable_name: String,
+        target: AssignmentExpression,
         value: Expression,
     },
     While {
@@ -74,6 +74,19 @@ pub enum Expression {
         subroutine: Box<Expression>,
         args: Vec<Expression>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum AssignmentExpression {
+    Identifier(String),
+    ArrayAccess {
+        base: Box<AssignmentExpression>,
+        index: Box<Expression>,
+    },
+    PropertyAccess {
+        base: Box<AssignmentExpression>,
+        property_name: String,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

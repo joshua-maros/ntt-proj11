@@ -33,7 +33,7 @@ macro_rules! match_next_token_and_annotate_errors {
             $(
                 Some(Ok(($patterns, line, col)))
                     => ($values).map_err(|e: String| format!(
-                        "At {}:{}:{}:\n{}", 
+                        "At {}:{}:{}:\n{}",
                         $sel.filename, line, col, e
                     )),
             )*
@@ -144,7 +144,9 @@ impl<'a> Parser<'a> {
                 })
             },
             Token::Symbol(Symbol::RightParen) => {
-                self.parse_expression(|t| t == &Symbol::LeftParen.into())
+                let res = self.parse_expression(|t| t == &Symbol::LeftParen.into())?;
+                self.expect_next(Symbol::LeftParen.into())?;
+                Ok(res)
             },
             Token::Keyword(Keyword::Null) => Ok(Expression::Null),
             Token::Keyword(Keyword::True) => Ok(Expression::BooleanConstant(true)),
@@ -198,9 +200,10 @@ impl<'a> Parser<'a> {
                     // Doing this as a function instead of a closure avoids a template recursion
                     // error
                     fn is_left_square_bracket(t: &Token) -> bool {
-                        t == &Token::Symbol(Symbol::LeftSquareBracket)
+                        t == &Symbol::LeftSquareBracket.into()
                     }
                     let index = self.parse_expression(is_left_square_bracket)?;
+                    self.expect_next(Symbol::LeftSquareBracket.into())?;
                     expr = Expression::ArrayAccess {
                         base: Box::new(expr),
                         index: Box::new(index),
@@ -237,6 +240,35 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses until an = sign is found.
+    fn parse_assignment_expression(&mut self) -> Result<AssignmentExpression, String> {
+        let ident = self.expect_identifier()?;
+        let mut expr = AssignmentExpression::Identifier(ident);
+        loop {
+            match_next_token!(self, "= or array/property access", {
+                Token::Symbol(Symbol::RightSquareBracket) => {
+                    let index = self.parse_expression(|t| t == &Symbol::LeftSquareBracket.into())?;
+                    self.expect_next(Symbol::LeftSquareBracket.into())?;
+                    expr = AssignmentExpression::ArrayAccess {
+                        base: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                    Ok(())
+                },
+                Token::Symbol(Symbol::Dot) => {
+                    let name = self.expect_identifier()?;
+                    expr = AssignmentExpression::PropertyAccess {
+                        base: Box::new(expr),
+                        property_name: name,
+                    };
+                    Ok(())
+                },
+                Token::Symbol(Symbol::Equals) => break
+            })?;
+        }
+        Ok(expr)
+    }
+
     fn parse_body(&mut self) -> Result<(Vec<VariableDeclaration>, Vec<Statement>), String> {
         let mut local_vars = Vec::new();
         let mut other_statements = Vec::new();
@@ -257,11 +289,10 @@ impl<'a> Parser<'a> {
                 },
                 Token::Keyword(Keyword::Let) => {
                     let semicolon = Token::Symbol(Symbol::Semicolon);
-                    let variable_name = self.expect_identifier()?;
-                    self.expect_next(Symbol::Equals.into())?;
+                    let target = self.parse_assignment_expression()?;
                     let value = self.parse_expression(|t| t == &semicolon)?;
                     self.expect_next(semicolon)?;
-                    other_statements.push(Statement::Let { variable_name, value });
+                    other_statements.push(Statement::Let { target, value });
                     Ok(())
                 },
                 Token::Keyword(Keyword::While) => {

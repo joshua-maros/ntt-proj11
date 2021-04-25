@@ -29,7 +29,7 @@ impl From<Symbol> for Token {
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Keyword(k) => write!(f, "keyword {}", k),
+            Self::Keyword(k) => write!(f, "keyword '{}'", k),
             Self::Symbol(s) => write!(f, "symbol '{}'", s),
             Self::IntegerConstant(v) => write!(f, "integer literal '{}'", v),
             Self::StringConstant(v) => write!(f, "string literal \"{}\"", v),

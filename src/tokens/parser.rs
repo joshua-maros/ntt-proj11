@@ -198,7 +198,7 @@ impl<'a> Tokenizer<'a> {
             return self.pop_token().map(|t| Ok(t));
         }
         let mut iter = self.input.chars().peekable();
-        while let (peek, Some(c)) = (iter.peek().cloned(), iter.next()) {
+        while let (Some(c), peek) = (iter.next(), iter.peek().cloned()) {
             self.peek_next = peek;
             if c == '\n' {
                 self.line += 1;
