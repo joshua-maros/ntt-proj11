@@ -1,4 +1,4 @@
-use super::{Keyword, Symbol, Token, TokenizedProgram};
+use super::{Keyword, Symbol, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum TokenizerState {
