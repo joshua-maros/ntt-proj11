@@ -22,6 +22,7 @@ pub enum DataType {
     BuiltinInt,
     BuiltinChar,
     BuiltinBool,
+    BuiltinVoid,
     /// Used for class names as data types.
     Other(String),
 }
@@ -103,6 +104,7 @@ pub struct ClassSubroutine {
     pub name: String,
     // 'type' is a rust keyword.
     pub typ: ClassSubroutineType,
+    pub return_type: DataType,
     pub parameters: Vec<VariableDeclaration>,
     pub local_variables: Vec<VariableDeclaration>,
     pub body: Vec<Statement>,
