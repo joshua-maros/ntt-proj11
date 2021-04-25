@@ -148,6 +148,7 @@ impl<'a> Parser<'a> {
                 self.expect_next(Symbol::LeftParen.into())?;
                 Ok(res)
             },
+            Token::Keyword(Keyword::This) => Ok(Expression::This),
             Token::Keyword(Keyword::Null) => Ok(Expression::Null),
             Token::Keyword(Keyword::True) => Ok(Expression::BooleanConstant(true)),
             Token::Keyword(Keyword::False) => Ok(Expression::BooleanConstant(false)),
@@ -306,7 +307,12 @@ impl<'a> Parser<'a> {
                     Ok(())
                 },
                 Token::Keyword(Keyword::Return) => {
-                    other_statements.push(Statement::Return);
+                    if let Some(Ok((Token::Symbol(Symbol::Semicolon), _, _))) = self.token_stream.peek() {
+                        other_statements.push(Statement::Return(None));
+                    } else {
+                        let expr = self.parse_expression(|t| t == &Symbol::Semicolon.into())?;
+                        other_statements.push(Statement::Return(Some(expr)));
+                    }
                     self.expect_next(Symbol::Semicolon.into())?;
                     Ok(())
                 },

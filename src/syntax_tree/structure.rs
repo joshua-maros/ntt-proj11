@@ -38,7 +38,7 @@ pub enum Statement {
         condition: Expression,
         body: Vec<Statement>,
     },
-    Return,
+    Return(Option<Expression>),
     If {
         condition: Expression,
         body: Vec<Statement>,
@@ -49,6 +49,7 @@ pub enum Statement {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Expression {
     Identifier(String),
+    This,
     Null,
     BooleanConstant(bool),
     IntegerConstant(i32),
