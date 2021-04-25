@@ -49,6 +49,10 @@ pub enum Statement {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Expression {
     Identifier(String),
+    Null,
+    BooleanConstant(bool),
+    IntegerConstant(i32),
+    StringConstant(String),
     ArrayAccess {
         base: Box<Expression>,
         index: Box<Expression>,
