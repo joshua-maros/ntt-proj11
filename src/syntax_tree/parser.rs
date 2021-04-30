@@ -127,7 +127,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a 'term' of an expression, I.E. anything that isn't a binary operation.
     fn parse_expression_term(&mut self) -> Result<Expression, String> {
-        match_next_token!(self, "identifier, -, or ~", {
+        let base = match_next_token!(self, "identifier, -, or ~", {
             Token::Identifier(ident) => Ok(Expression::Identifier(ident)),
             Token::Symbol(Symbol::Tilde) => {
                 let expr = self.parse_expression_term()?;
@@ -154,7 +154,47 @@ impl<'a> Parser<'a> {
             Token::Keyword(Keyword::False) => Ok(Expression::BooleanConstant(false)),
             Token::IntegerConstant(value) => Ok(Expression::IntegerConstant(value)),
             Token::StringConstant(value) => Ok(Expression::StringConstant(value))
-        })
+        })?;
+        let mut result = base;
+        loop {
+            match self.token_stream.peek() {
+                Some(Ok((Token::Symbol(sym), _, _))) => match sym {
+                    Symbol::Dot => {
+                        self.token_stream.next().unwrap().unwrap();
+                        let name = self.expect_identifier()?;
+                        result = Expression::PropertyAccess {
+                            base: Box::new(result),
+                            property_name: name,
+                        };
+                    }
+                    Symbol::RightParen => {
+                        self.token_stream.next().unwrap().unwrap();
+                        let args = self.parse_argument_list()?;
+                        result = Expression::SubroutineCall {
+                            args,
+                            subroutine: Box::new(result),
+                        };
+                    }
+                    Symbol::RightSquareBracket => {
+                        self.token_stream.next().unwrap().unwrap();
+                        // Doing this as a function instead of a closure avoids a template recursion
+                        // error
+                        fn is_left_square_bracket(t: &Token) -> bool {
+                            t == &Symbol::LeftSquareBracket.into()
+                        }
+                        let index = self.parse_expression(is_left_square_bracket)?;
+                        self.expect_next(Symbol::LeftSquareBracket.into())?;
+                        result = Expression::ArrayAccess {
+                            base: Box::new(result),
+                            index: Box::new(index),
+                        };
+                    }
+                    _ => break,
+                },
+                _ => break,
+            }
+        }
+        Ok(result)
     }
 
     /// Until is the token this should look for as a signal that the expression has ended. It will
@@ -175,42 +215,11 @@ impl<'a> Parser<'a> {
                 Token::Symbol(Symbol::Minus) => Ok(BinaryOperator::Subtract),
                 Token::Symbol(Symbol::Asterick) => Ok(BinaryOperator::Multiply),
                 Token::Symbol(Symbol::ForwardSlash) => Ok(BinaryOperator::Divide),
-                Token::Symbol(Symbol::RightAngleBracket) => Ok(BinaryOperator::LessThan),
-                Token::Symbol(Symbol::LeftAngleBracket) => Ok(BinaryOperator::GreaterThan),
+                Token::Symbol(Symbol::RightAngleBracket) => Ok(BinaryOperator::GreaterThan),
+                Token::Symbol(Symbol::LeftAngleBracket) => Ok(BinaryOperator::LessThan),
                 Token::Symbol(Symbol::Equals) => Ok(BinaryOperator::Equal),
                 Token::Symbol(Symbol::Ampersand) => Ok(BinaryOperator::BitwiseAnd),
-                Token::Symbol(Symbol::VerticalPipe) => Ok(BinaryOperator::BitwiseOr),
-                // Special cases.
-                Token::Symbol(Symbol::Dot) => {
-                    let name = self.expect_identifier()?;
-                    expr = Expression::PropertyAccess {
-                        base: Box::new(expr),
-                        property_name: name,
-                    };
-                    continue;
-                },
-                Token::Symbol(Symbol::RightParen) => {
-                    let args = self.parse_argument_list()?;
-                    expr = Expression::SubroutineCall {
-                        args,
-                        subroutine: Box::new(expr),
-                    };
-                    continue;
-                },
-                Token::Symbol(Symbol::RightSquareBracket) => {
-                    // Doing this as a function instead of a closure avoids a template recursion
-                    // error
-                    fn is_left_square_bracket(t: &Token) -> bool {
-                        t == &Symbol::LeftSquareBracket.into()
-                    }
-                    let index = self.parse_expression(is_left_square_bracket)?;
-                    self.expect_next(Symbol::LeftSquareBracket.into())?;
-                    expr = Expression::ArrayAccess {
-                        base: Box::new(expr),
-                        index: Box::new(index),
-                    };
-                    continue;
-                }
+                Token::Symbol(Symbol::VerticalPipe) => Ok(BinaryOperator::BitwiseOr)
             })?;
             let rhs = self.parse_expression_term()?;
             expr = Expression::BinaryOperation {

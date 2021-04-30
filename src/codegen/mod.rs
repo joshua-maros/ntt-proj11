@@ -1,6 +1,6 @@
 use crate::syntax_tree::{
-    AssignmentExpression, BinaryOperator, Class, ClassSubroutine, Expression, Method, Statement,
-    UnaryOperator,
+    AssignmentExpression, BinaryOperator, Class, ClassSubroutine, Constructor, Expression, Method,
+    Statement, UnaryOperator,
 };
 use std::{collections::HashMap, fmt::Write};
 
@@ -65,9 +65,12 @@ impl CodeGenerator {
     /// Returns a string indicating the internal label of the function that the expression
     /// represents. If the function is being called like a method, this function also generates
     /// code to initialize the 'this' pointer.
-    fn generate_call_source(&mut self, expr: &Expression) -> Result<String, String> {
+    fn generate_call_source(&mut self, expr: &Expression) -> Result<(String, bool), String> {
         match expr {
-            Expression::Identifier(ident) => Ok(format!("{}.{}", self.class_name, ident)),
+            Expression::Identifier(ident) => {
+                self.output.push_str("push pointer 0\n");
+                Ok((format!("{}.{}", self.class_name, ident), true))
+            }
             Expression::PropertyAccess {
                 base,
                 property_name,
@@ -77,11 +80,11 @@ impl CodeGenerator {
                         && !self.subroutine_symbol_table.contains_key(ident)
                     {
                         // This is a class name defined in an external file.
-                        return Ok(format!("{}.{}", ident, property_name));
+                        return Ok((format!("{}.{}", ident, property_name), false));
                     }
                 }
                 let base_type = self.push_expression(base)?.0;
-                Ok(format!("{}.{}", base_type, property_name))
+                Ok((format!("{}.{}", base_type, property_name), true))
             }
             other => Err(format!("{:?} cannot be called.", other)),
         }
@@ -98,7 +101,7 @@ impl CodeGenerator {
                 self.push_expression(base)?;
                 self.push_expression(index)?;
                 put!("add\n");
-                put!("pop pointers 1\n");
+                put!("pop pointer 1\n");
                 put!("push that 0\n");
                 Ok(DataTypeName(format!("int")))
             }
@@ -111,8 +114,8 @@ impl CodeGenerator {
                     BitwiseOr => "or",
                     Add => "add",
                     Subtract => "sub",
-                    Multiply => "call Math.function_multiply.params_int_int 2",
-                    Divide => "call Math.function_divide.params_int_int 2",
+                    Multiply => "call Math.multiply 2",
+                    Divide => "call Math.divide 2",
                     LessThan => "lt",
                     GreaterThan => "gt",
                     Equal => "eq",
@@ -145,36 +148,37 @@ impl CodeGenerator {
                 unimplemented!()
             }
             Expression::StringConstant(value) => {
-                // Save this pointer...
-                put!("push pointers 0\n");
                 // Make new string.
-                put!("push constant 0\n");
+                put!("push constant {}\n", value.len());
                 put!("call String.new 1\n");
-                // Set this pointer.
-                put!("pop pointers 0\n");
+                put!("pop temp 1\n");
                 // Push characters.
                 for c in value.chars() {
                     if !c.is_ascii() {
                         unimplemented!("Unicode strings are not supported.");
                     }
+                    put!("push temp 1\n");
                     put!("push constant {}\n", c as u8);
-                    put!("call String.appendChar 1\n");
-                    put!("pop\n");
+                    put!("call String.appendChar 2\n");
+                    put!("pop temp 0\n");
                 }
-                // Restore this pointer...
-                put!("pop pointers 0\n");
+                put!("push temp 1\n");
                 Ok(DataTypeName(format!("String")))
             }
             Expression::SubroutineCall { subroutine, args } => {
+                let (call_label, has_this_argument) = self.generate_call_source(subroutine)?;
                 for arg in args {
                     self.push_expression(arg)?;
                 }
-                let call_label = self.generate_call_source(subroutine)?;
-                put!("call {} {}\n", call_label, args.len());
+                put!(
+                    "call {} {}\n",
+                    call_label,
+                    args.len() + if has_this_argument { 1 } else { 0 }
+                );
                 Ok(DataTypeName(format!("int")))
             }
             Expression::This => {
-                put!("push pointers 0\n");
+                put!("push pointer 0\n");
                 Ok(DataTypeName(self.class_name.clone()))
             }
             Expression::UnaryOperation { operator, rhs } => {
@@ -208,7 +212,7 @@ impl CodeGenerator {
                     self.push_expression(index)?;
                     put!("add\n");
                     // Setup 'that' pointer.
-                    put!("pop pointers 1\n");
+                    put!("pop pointer 1\n");
                     // Assign the value.
                     put!("pop that 0\n");
                     Ok(())
@@ -238,7 +242,7 @@ impl CodeGenerator {
             match statement {
                 Statement::Do(expression) => {
                     self.push_expression(expression)?;
-                    put!("pop\n");
+                    put!("pop temp 0\n");
                 }
                 Statement::If {
                     condition,
@@ -310,6 +314,11 @@ impl CodeGenerator {
         put!(" {}\n", subroutine.local_variables.len());
         self.subroutine_symbol_table.clear();
         for (index, parameter) in subroutine.parameters.iter().enumerate() {
+            let index = if subroutine.typ == Method {
+                index + 1
+            } else {
+                index
+            };
             let entry = SubroutineSymbol::Argument { index };
             let data_type = parameter.typ.name().to_owned();
             self.subroutine_symbol_table
@@ -320,6 +329,16 @@ impl CodeGenerator {
             let data_type = local_var.typ.name().to_owned();
             self.subroutine_symbol_table
                 .insert(local_var.name.clone(), (entry, data_type));
+        }
+
+        if subroutine.typ == Constructor {
+            // Setup this pointer.
+            put!("push constant {}\n", class.field_variables.len());
+            put!("call Memory.alloc 1\n");
+            put!("pop pointer 0\n");
+        } else if subroutine.typ == Method {
+            put!("push argument 0\n");
+            put!("pop pointer 0\n");
         }
 
         self.generate_body(&subroutine.body[..])?;

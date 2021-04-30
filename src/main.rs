@@ -48,7 +48,6 @@ fn main() {
                 .unwrap()
                 .to_string_lossy()
                 .replace(".vm", "");
-            println!("{}", expected_class_name);
             for class in classes {
                 let vm_code = match codegen::generate_code(&class) {
                     Ok(v) => v,
