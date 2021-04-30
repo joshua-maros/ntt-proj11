@@ -1,3 +1,4 @@
+mod codegen;
 mod syntax_tree;
 mod tokens;
 
@@ -15,11 +16,9 @@ fn main() {
     // can be used on consumer-grade CPUs. </sarcasm>
     let dirname = args.into_iter().skip(1).next().unwrap();
 
-    let mut classes = Vec::new();
     for entry in std::fs::read_dir(&dirname[..]).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
-        println!("{:?}", path);
         if path.is_file() && path.extension() == Some(OsStr::new("jack")) {
             let file_contents = match std::fs::read_to_string(&path) {
                 Ok(contents) => contents,
@@ -31,18 +30,51 @@ fn main() {
                     std::process::exit(-1);
                 }
             };
-            match syntax_tree::parse(
+
+            let classes = match syntax_tree::parse(
                 &file_contents[..],
                 &path.file_name().unwrap().to_string_lossy(),
             ) {
-                Ok(mut data) => classes.append(&mut data),
+                Ok(data) => data,
                 Err(err) => {
                     eprintln!("\n\n{}", err);
+                    std::process::exit(-1);
+                }
+            };
+
+            let base_output_path = path.with_extension("vm");
+            let expected_class_name = base_output_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .replace(".vm", "");
+            println!("{}", expected_class_name);
+            for class in classes {
+                let vm_code = match codegen::generate_code(&class) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        eprintln!(
+                            "\n\nEncountered while processing class '{}':\n{}",
+                            class.name, err
+                        );
+                        std::process::exit(-1);
+                    }
+                };
+                let output_path = if class.name == expected_class_name {
+                    base_output_path.clone()
+                } else {
+                    base_output_path
+                        .with_file_name(format!("{}.{}.vm", expected_class_name, class.name))
+                };
+                // println!("{:?}:\n{}", output_path, vm_code);
+                if let Err(err) = std::fs::write(&output_path, vm_code) {
+                    eprintln!(
+                        "ERROR: Failed to write generated code to '{:?}', caused by:\n{}",
+                        output_path, err
+                    );
                     std::process::exit(-1);
                 }
             }
         }
     }
-
-    println!("{:#?}", classes);
 }

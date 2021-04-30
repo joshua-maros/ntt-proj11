@@ -27,6 +27,18 @@ pub enum DataType {
     Other(String),
 }
 
+impl DataType {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::BuiltinInt => "int",
+            Self::BuiltinChar => "char",
+            Self::BuiltinBool => "bool",
+            Self::BuiltinVoid => "void",
+            Self::Other(name) => &name[..],
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Statement {
     Do(Expression),
@@ -87,7 +99,7 @@ pub enum AssignmentExpression {
     PropertyAccess {
         base: Box<AssignmentExpression>,
         property_name: String,
-    }
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
